@@ -1,0 +1,225 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>OCPP Attack & Defense Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    body {
+      font-family: "Inter", "Segoe UI", Arial;
+      margin: 0;
+      padding: 0;
+      background: #eef1f7;
+      overflow-x: hidden;
+    }
+    header {
+      background: linear-gradient(90deg, #2b3a67, #3e4f85);
+      color: white;
+      padding: 22px;
+      font-size: 1.7rem;
+      font-weight: 700;
+      text-align: center;
+    }
+
+    .container {
+      padding: 25px;
+      max-width: 1400px;
+      margin: auto;
+    }
+
+    .grid {
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:25px;
+      align-items: flex-start;
+    }
+    .card {
+      background:white;
+      padding:20px;
+      border-radius:14px;
+      box-shadow:0 3px 10px rgba(0,0,0,0.08);
+      height: 550px;
+      overflow:hidden;
+      display:flex;
+      flex-direction:column;
+    }
+
+    .chart-wrapper {
+      height:300px;
+    }
+
+    #logs {
+      overflow-y:auto;
+      flex-grow:1;
+      padding-right:10px;
+    }
+
+    /* 카드 스타일 */
+    .log-item {
+      padding:14px;
+      margin-bottom:14px;
+      border-radius:10px;
+      background:#ffffff;
+      border-left:5px solid #d0d0d0;
+      box-shadow:0 1px 4px rgba(0,0,0,0.05);
+    }
+
+    /* 공격 성공 */
+    .attack-success {
+      background:#ffe5e5;
+      border-left-color:#ff4d4d;
+    }
+
+    /* 방어 성공 */
+    .attack-blocked {
+      background:#e7ffef;
+      border-left-color:#42c96a;
+    }
+
+    /* 정상 통신 성공 */
+    .normal-success {
+      background:#e3f2fd;
+      border-left-color:#2196f3;
+    }
+
+    .event-title {
+      font-size:1.1rem;
+      font-weight:700;
+      margin-bottom:10px;
+    }
+
+    .tag {
+      display:inline-block;
+      padding:3px 7px;
+      border-radius:6px;
+      font-size:0.75rem;
+      color:white;
+      margin-right:4px;
+      font-weight:600;
+    }
+    .tag.accepted { background:#4caf50; }
+    .tag.rejected { background:#f44336; }
+    .tag.secure { background:#3f51b5; }
+    .tag.vulnerable { background:#607d8b; }
+
+    .reason-tag {
+      display:inline-block;
+      padding:3px 7px;
+      border-radius:4px;
+      font-size:0.75rem;
+      background:#ff9800;
+      color:white;
+      margin-left:5px;
+      font-weight:600;
+    }
+
+  </style>
+</head>
+
+<body>
+<header>🛡 OCPP Security Attack & Defense Dashboard</header>
+
+<div class="container">
+  <div class="grid">
+
+    <div class="card">
+      <h3>📊 Overall Attack / Defense Graph</h3>
+      <div class="chart-wrapper">
+        <canvas id="chart"></canvas>
+      </div>
+      <pre id="counts" style="font-size:0.75rem; max-height:200px; overflow:auto;"></pre>
+    </div>
+
+    <div class="card">
+      <h3>🚨 Live Attack Logs</h3>
+      <div id="logs"></div>
+    </div>
+
+  </div>
+</div>
+
+
+<script>
+const ctx = document.getElementById("chart").getContext("2d");
+
+let chart = new Chart(ctx, {
+  type: "bar",
+  data: {
+    labels: [
+      "Vulnerable accepted",
+      "Vulnerable rejected",
+      "Secure accepted",
+      "Secure rejected"
+    ],
+    datasets: [{
+      label: "Count",
+      data: [0,0,0,0],
+      backgroundColor: ["#ef5350","#b0bec5","#42a5f5","#66bb6a"]
+    }]
+  },
+  options: {
+    scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+    plugins: { legend: { display: false }},
+    responsive: true,
+    maintainAspectRatio: false
+  }
+});
+
+const logs = document.getElementById("logs");
+const counts = document.getElementById("counts");
+const evtSource = new EventSource("/stream");
+
+evtSource.onmessage = (msg) => {
+  try {
+    const payload = JSON.parse(msg.data);
+    const ev = payload.event || {};
+    const c = payload.counters || {};
+
+    chart.data.datasets[0].data = [
+      c.vulnerable?.accepted || 0,
+      c.vulnerable?.rejected || 0,
+      c.secure?.accepted || 0,
+      c.secure?.rejected || 0
+    ];
+    chart.update();
+
+    counts.textContent = JSON.stringify(payload, null, 2);
+
+    const server = ev.server;
+    const result = ev.result;
+    const type = ev.type;
+    const reason = ev.reason;
+    const time = ev.ts ? new Date(ev.ts*1000).toLocaleTimeString() : "";
+
+    let cssClass = "";
+    let title = "";
+
+    if (server === "vulnerable" && result === "accepted")
+      cssClass = "attack-success", title = `🛑 공격 성공 (${type})`;
+
+    else if (server === "secure" && result === "rejected")
+      cssClass = "attack-blocked", title = `🛡 방어 성공 (${type})`;
+
+    else if (server === "secure" && result === "accepted" && type === "normal")
+      cssClass = "normal-success", title = `✔ 정상 통신 성공`;
+
+    const div = document.createElement("div");
+    div.className = `log-item ${cssClass}`;
+    div.innerHTML = `
+      <div class="event-title">${title}</div>
+      <b>${time}</b><br>
+      <span class="tag ${server}">${server}</span>
+      <span class="tag ${result}">${result}</span>
+      <span class="reason-tag">${reason}</span>
+    `;
+
+    logs.prepend(div);
+
+  } catch(e) {
+    console.error("SSE parse error", e);
+  }
+};
+</script>
+</body>
+</html>

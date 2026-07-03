@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.DS_Store
+
+# private keys & generated certs (test-only, kept out of version control)
+*.key
+*.csr
+*.srl
