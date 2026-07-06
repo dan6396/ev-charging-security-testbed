@@ -4,6 +4,27 @@ OCPP 1.6 전기차 충전기와 중앙 시스템 통신에서 발생할 수 있�
 
 > AI 프로젝트는 아니지만, 보안 포트폴리오용으로 "공격을 재현하고 방어 로직의 차이를 검증"하는 데 초점을 맞춘 프로젝트입니다.
 
+## 실험 흐름
+
+```mermaid
+flowchart LR
+  C["공격/정상 클라이언트"] --> V["vulnerable_server.py<br/>검증 없음"]
+  C --> S["secure_server.py<br/>mTLS·hash·nonce·rate-limit"]
+  V --> D["dashboard.py<br/>accepted/rejected 이벤트"]
+  S --> D
+  D --> UI["Flask + SSE 실시간 대시보드"]
+```
+
+## 기술 선택 이유
+
+| 기술 | 이유 |
+|---|---|
+| Python | 보안 시나리오를 빠르게 스크립트화하기 쉬움 |
+| `python-ocpp` | OCPP 1.6 메시지 구조를 직접 구현하지 않고 재현 |
+| `websockets` + mTLS | 충전기-중앙 시스템의 WSS 통신과 인증서 검증 실험 |
+| Flask + SSE | accepted/rejected 이벤트를 가볍게 실시간 시각화 |
+| SHA-256 hash + nonce + timestamp | 메시지 무결성, replay 방어 흐름을 명확히 보여줌 |
+
 ## 문제와 해결
 
 | 문제 | 취약 서버 | 보안 서버 |
@@ -14,17 +35,6 @@ OCPP 1.6 전기차 충전기와 중앙 시스템 통신에서 발생할 수 있�
 | replay 공격 | 같은 요청 재전송 허용 | timestamp + nonce 재사용 차단 |
 | flood 공격 | 요청을 계속 처리 | 60초 기준 rate limit 적용 |
 | 잘못된 WebSocket subprotocol | 연결 유지 가능 | 연결 즉시 종료 |
-
-## 아키텍처
-
-```mermaid
-flowchart LR
-  C["공격/정상 클라이언트"] --> V["vulnerable_server.py<br/>검증 없음"]
-  C --> S["secure_server.py<br/>mTLS·hash·nonce·rate-limit"]
-  V --> D["dashboard.py<br/>accepted/rejected 이벤트"]
-  S --> D
-  D --> UI["Flask + SSE 실시간 대시보드"]
-```
 
 ## 공격 시나리오
 
@@ -37,16 +47,6 @@ flowchart LR
 | `bad_subprotocol_client.py` | 잘못된 WebSocket subprotocol | 연결 종료 |
 | `no_cert_client.py` | 클라이언트 인증서 없이 접속 | TLS handshake 차단 |
 | `flood_attack_client.py` | 짧은 간격 대량 요청 | rate-limit |
-
-## 기술 선택 이유
-
-| 기술 | 이유 |
-|---|---|
-| Python | 보안 시나리오를 빠르게 스크립트화하기 쉬움 |
-| `python-ocpp` | OCPP 1.6 메시지 구조를 직접 구현하지 않고 재현 |
-| `websockets` + mTLS | 충전기-중앙 시스템의 WSS 통신과 인증서 검증 실험 |
-| Flask + SSE | accepted/rejected 이벤트를 가볍게 실시간 시각화 |
-| SHA-256 hash + nonce + timestamp | 메시지 무결성, replay 방어 흐름을 명확히 보여줌 |
 
 ## 실행
 
